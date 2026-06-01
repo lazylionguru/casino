@@ -6,17 +6,19 @@ import Dice from "./pages/Dice";
 import Crash from "./pages/Crash";
 import Slots from "./pages/Slots";
 import Pool from "./pages/Pool";
+import History from "./pages/History";
 
 export default function App() {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/coinflip" element={<Coinflip />} />
-        <Route path="/dice" element={<Dice />} />
-        <Route path="/crash" element={<Crash />} />
-        <Route path="/slots" element={<Slots />} />
-        <Route path="/pool" element={<Pool />} />
+        <Route path="/"        element={<Dashboard />} />
+        <Route path="/coinflip"element={<Coinflip />} />
+        <Route path="/dice"    element={<Dice />} />
+        <Route path="/crash"   element={<Crash />} />
+        <Route path="/slots"   element={<Slots />} />
+        <Route path="/pool"    element={<Pool />} />
+        <Route path="/history" element={<History />} />
       </Routes>
     </Layout>
   );

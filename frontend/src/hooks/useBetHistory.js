@@ -1,9 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { useAccount, usePublicClient } from "wagmi";
+import { useAccount } from "wagmi";
 import { createPublicClient, http, parseAbiItem } from "viem";
 import { sepolia } from "wagmi/chains";
-import { PUBLIC_RPC } from "../config/wagmi";
 import contractAddresses from "../config/contracts.json";
+
+const rpcClient = createPublicClient({
+  chain: sepolia,
+  transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
+});
 
 const SLOT_SYMBOLS = ["🍒", "🍋", "🍊", "🍇", "🔔", "7️⃣"];
 
@@ -38,12 +42,6 @@ const EVENTS = [
   },
 ];
 
-// Separate public client for getLogs — avoids Alchemy rate limits
-const publicLogClient = createPublicClient({
-  chain: sepolia,
-  transport: http(PUBLIC_RPC),
-});
-
 export function useBetHistory() {
   const { address } = useAccount();
   const [history, setHistory] = useState([]);
@@ -56,22 +54,19 @@ export function useBetHistory() {
     setError(null);
 
     try {
-      // Only look back 10000 blocks (~33 hours) to avoid RPC limits
-      const toBlock = await publicLogClient.getBlockNumber();
+      const toBlock = await rpcClient.getBlockNumber();
       const fromBlock = toBlock > 10000n ? toBlock - 10000n : 0n;
-
       const allBets = [];
 
       for (const event of EVENTS) {
         try {
-          const logs = await publicLogClient.getLogs({
+          const logs = await rpcClient.getLogs({
             address: contractAddresses.CasinoGames,
             event: event.abi,
             args: { player: address },
             fromBlock,
             toBlock,
           });
-
           for (const log of logs) {
             const a = log.args;
             allBets.push({
@@ -95,7 +90,7 @@ export function useBetHistory() {
       setHistory(allBets);
     } catch (err) {
       console.error("History fetch failed:", err);
-      setError("Failed to load history. Try refreshing.");
+      setError("Failed to load history.");
     } finally {
       setLoading(false);
     }

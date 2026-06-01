@@ -1,14 +1,18 @@
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { createConfig, http } from "wagmi";
 import { sepolia, hardhat } from "wagmi/chains";
+import { injected } from "wagmi/connectors";
 
-export const wagmiConfig = getDefaultConfig({
-  appName: "CryptoCasino Testnet",
-  projectId: "7895f8d96709cac46d1779860c030ff1", // public demo key - fine for testnet
+// Simple config — MetaMask only, no WalletConnect
+// This eliminates all the 403 errors from WalletConnect cloud
+export const wagmiConfig = createConfig({
   chains: [sepolia, hardhat],
-  ssr: false,
+  connectors: [injected()], // MetaMask and other injected wallets
+  transports: {
+    [sepolia.id]: http("https://ethereum-sepolia-rpc.publicnode.com"),
+    [hardhat.id]: http("http://127.0.0.1:8545"),
+  },
 });
 
-// Contract ABIs
 export const POOL_ABI = [
   "function addLiquidity() external payable",
   "function removeLiquidity(uint256 shareAmount) external",
@@ -34,6 +38,3 @@ export const GAMES_ABI = [
   "event CrashResult(uint256 indexed requestId, address indexed player, uint256 bet, bool won, uint256 crashPoint, uint256 cashoutAt, uint256 payout)",
   "event SlotsResult(uint256 indexed requestId, address indexed player, uint256 bet, uint8[3] reels, uint256 payout)",
 ];
-
-// Use public Sepolia RPC for getLogs — avoids Alchemy rate limits
-export const PUBLIC_RPC = "https://ethereum-sepolia-rpc.publicnode.com";

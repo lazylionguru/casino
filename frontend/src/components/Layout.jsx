@@ -1,6 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useAccount, useBalance } from "wagmi";
+import { useAccount, useBalance, useConnect, useDisconnect } from "wagmi";
 
 const NAV = [
   { path: "/",         label: "Dashboard",  icon: "⬡" },
@@ -12,10 +11,57 @@ const NAV = [
   { path: "/pool",     label: "Liquidity",  icon: "💧" },
 ];
 
-export default function Layout({ children }) {
-  const { address } = useAccount();
+function WalletButton() {
+  const { address, isConnected } = useAccount();
+  const { connect, connectors } = useConnect();
+  const { disconnect } = useDisconnect();
   const { data: balance } = useBalance({ address });
 
+  if (isConnected) {
+    return (
+      <div>
+        {balance && (
+          <div style={{ margin: "0 0 8px", padding: "10px 14px", background: "var(--bg3)", borderRadius: 8, border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>YOUR BALANCE</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 16, color: "var(--gold)", fontWeight: 600 }}>
+              {parseFloat(balance.formatted).toFixed(4)} ETH
+            </div>
+          </div>
+        )}
+        <button
+          onClick={() => disconnect()}
+          style={{
+            width: "100%", padding: "10px",
+            background: "var(--bg3)", color: "var(--muted)",
+            border: "1px solid var(--border)", borderRadius: 8,
+            fontSize: 12, fontFamily: "var(--font-mono)", cursor: "pointer",
+            textAlign: "left",
+          }}
+        >
+          {address.slice(0, 6)}...{address.slice(-4)} ✕
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => connect({ connector: connectors[0] })}
+      style={{
+        width: "100%", padding: "12px",
+        background: "var(--gold)", color: "#000",
+        border: "none", borderRadius: 8,
+        fontSize: 14, fontWeight: 700,
+        fontFamily: "var(--font-head)", letterSpacing: 1,
+        cursor: "pointer",
+      }}
+    >
+      Connect Wallet
+    </button>
+  );
+}
+
+export default function Layout({ children }) {
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       <aside style={{ width: 220, minWidth: 220, background: "var(--bg2)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column" }}>
@@ -24,7 +70,7 @@ export default function Layout({ children }) {
           <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4, fontFamily: "var(--font-mono)", letterSpacing: 1 }}>SEPOLIA TESTNET</div>
         </div>
 
-        <nav style={{ padding: "12px 12px", flex: 1 }}>
+        <nav style={{ padding: "12px", flex: 1 }}>
           {NAV.map(({ path, label, icon }) => (
             <NavLink key={path} to={path} end={path === "/"} style={({ isActive }) => ({
               display: "flex", alignItems: "center", gap: 12,
@@ -40,17 +86,8 @@ export default function Layout({ children }) {
           ))}
         </nav>
 
-        {address && balance && (
-          <div style={{ margin: "0 12px 12px", padding: "12px 14px", background: "var(--bg3)", borderRadius: 8, border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>YOUR BALANCE</div>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 16, color: "var(--gold)", fontWeight: 600 }}>
-              {parseFloat(balance.formatted).toFixed(4)} ETH
-            </div>
-          </div>
-        )}
-
         <div style={{ padding: "12px", borderTop: "1px solid var(--border)" }}>
-          <ConnectButton showBalance={false} chainStatus="icon" accountStatus="avatar" />
+          <WalletButton />
         </div>
       </aside>
 

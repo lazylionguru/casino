@@ -3,7 +3,7 @@ import { sepolia, hardhat } from "wagmi/chains";
 
 export const wagmiConfig = getDefaultConfig({
   appName: "CryptoCasino Testnet",
-  projectId: "2f539a7b7145a3e379a58dc2a9ba8b21", // public demo key - fine for testnet
+  projectId: "7895f8d96709cac46d1779860c030ff1", // public demo key - fine for testnet
   chains: [sepolia, hardhat],
   ssr: false,
 });

@@ -1,41 +1,43 @@
 import { useState, useEffect, useCallback } from "react";
 import { usePublicClient, useAccount } from "wagmi";
-import { parseAbi, formatEther } from "viem";
-import { GAMES_ABI } from "../config/wagmi";
+import { parseAbiItem, formatEther } from "viem";
 import contractAddresses from "../config/contracts.json";
-
-const GAME_EVENTS = [
-  "CoinflipResult",
-  "DiceResult",
-  "CrashResult",
-  "SlotsResult",
-];
-
-const GAME_LABELS = {
-  CoinflipResult: "Coin Flip",
-  DiceResult:     "Dice Roll",
-  CrashResult:    "Crash",
-  SlotsResult:    "Slots",
-};
 
 const SLOT_SYMBOLS = ["🍒", "🍋", "🍊", "🍇", "🔔", "7️⃣"];
 
-function formatDetail(eventName, decoded) {
-  if (eventName === "CoinflipResult") {
-    return `Picked ${decoded.roll === 0n ? "Heads" : "Tails"}`;
-  }
-  if (eventName === "DiceResult") {
-    return `Rolled ${decoded.roll} (target < ${decoded.target})`;
-  }
-  if (eventName === "CrashResult") {
-    return `Crashed @ ${(Number(decoded.crashPoint) / 100).toFixed(2)}× (target ${(Number(decoded.cashoutAt) / 100).toFixed(2)}×)`;
-  }
-  if (eventName === "SlotsResult") {
-    const reels = decoded.reels.map(r => SLOT_SYMBOLS[Number(r)]).join(" ");
-    return `Reels: ${reels}`;
-  }
-  return "";
-}
+// Targeted ABI items — getLogs is much more reliable with explicit event ABIs
+const EVENTS = [
+  {
+    name: "Coin Flip",
+    abi: parseAbiItem("event CoinflipResult(uint256 indexed requestId, address indexed player, uint256 bet, bool won, uint256 roll, uint256 payout)"),
+    detail: (a) => `Landed ${a.roll === 0n ? "Heads" : "Tails"}`,
+    won: (a) => a.payout > 0n,
+    payout: (a) => a.payout,
+  },
+  {
+    name: "Dice Roll",
+    abi: parseAbiItem("event DiceResult(uint256 indexed requestId, address indexed player, uint256 bet, bool won, uint256 roll, uint256 target, uint256 payout)"),
+    detail: (a) => `Rolled ${a.roll} (needed < ${a.target})`,
+    won: (a) => a.payout > 0n,
+    payout: (a) => a.payout,
+  },
+  {
+    name: "Crash",
+    abi: parseAbiItem("event CrashResult(uint256 indexed requestId, address indexed player, uint256 bet, bool won, uint256 crashPoint, uint256 cashoutAt, uint256 payout)"),
+    detail: (a) => `Crashed @ ${(Number(a.crashPoint) / 100).toFixed(2)}× (target ${(Number(a.cashoutAt) / 100).toFixed(2)}×)`,
+    won: (a) => a.payout > 0n,
+    payout: (a) => a.payout,
+  },
+  {
+    name: "Slots",
+    abi: parseAbiItem("event SlotsResult(uint256 indexed requestId, address indexed player, uint256 bet, uint8[3] reels, uint256 payout)"),
+    detail: (a) => `${a.reels.map(r => SLOT_SYMBOLS[Number(r)]).join(" ")}`,
+    won: (a) => a.payout > 0n,
+    payout: (a) => a.payout,
+  },
+];
+
+const GAME_ICONS = { "Coin Flip": "🪙", "Dice Roll": "🎲", "Crash": "📈", "Slots": "🎰" };
 
 export function useBetHistory() {
   const { address } = useAccount();
@@ -49,48 +51,38 @@ export function useBetHistory() {
 
     try {
       const toBlock = await publicClient.getBlockNumber();
-      // Look back ~50000 blocks (~7 days on Sepolia)
       const fromBlock = toBlock > 50000n ? toBlock - 50000n : 0n;
-
       const allBets = [];
 
-      for (const eventName of GAME_EVENTS) {
+      for (const event of EVENTS) {
         try {
           const logs = await publicClient.getLogs({
             address: contractAddresses.CasinoGames,
+            event: event.abi,
+            args: { player: address }, // filter by player address directly
             fromBlock,
             toBlock,
           });
 
           for (const log of logs) {
-            try {
-              const decoded = publicClient.decodeEventLog({
-                abi: parseAbi(GAMES_ABI),
-                eventName,
-                data: log.data,
-                topics: log.topics,
-              });
-
-              // Only show this player's bets
-              if (decoded.player?.toLowerCase() !== address.toLowerCase()) continue;
-
-              allBets.push({
-                id: `${log.transactionHash}-${log.logIndex}`,
-                txHash: log.transactionHash,
-                blockNumber: log.blockNumber,
-                game: GAME_LABELS[eventName],
-                eventName,
-                bet: decoded.bet,
-                won: decoded.payout > 0n,
-                payout: decoded.payout,
-                detail: formatDetail(eventName, decoded),
-              });
-            } catch {}
+            const a = log.args;
+            allBets.push({
+              id: `${log.transactionHash}-${log.logIndex}`,
+              txHash: log.transactionHash,
+              blockNumber: log.blockNumber,
+              game: event.name,
+              icon: GAME_ICONS[event.name],
+              bet: a.bet,
+              won: event.won(a),
+              payout: event.payout(a),
+              detail: event.detail(a),
+            });
           }
-        } catch {}
+        } catch (err) {
+          console.warn(`Failed to fetch ${event.name} history:`, err.message);
+        }
       }
 
-      // Sort newest first
       allBets.sort((a, b) => Number(b.blockNumber) - Number(a.blockNumber));
       setHistory(allBets);
     } catch (err) {
@@ -100,9 +92,7 @@ export function useBetHistory() {
     }
   }, [address, publicClient]);
 
-  useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
+  useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
   return { history, loading, refetch: fetchHistory };
 }

@@ -1,8 +1,8 @@
 {
   "network": "sepolia",
   "chainId": "11155111",
-  "CasinoPool": "0x3eD25Fb3705037c28061798F1Eb24DcfDfFca46c",
-  "CasinoGames": "0xFd4d0dC32Be0077596B0a45eb7DC463736cAB618",
+  "CasinoPool": "0x22f30dE6bfF5856cEEB1cC46f2BB0f3EaE59B0cA",
+  "CasinoGames": "0xEd74C76754fB8a135DD8b0681E25D513d26b738A",
   "VRFCoordinator": "0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B",
-  "deployedAt": "2026-06-01T07:05:26.265Z"
+  "deployedAt": "2026-06-01T07:30:38.975Z"
 }

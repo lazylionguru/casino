@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { usePoolStats, usePlayGame } from "../hooks/useContracts";
+import { usePoolStats } from "../hooks/useContracts";
+import { usePlayAndWatch } from "../hooks/usePlayAndWatch";
 import BetPanel from "../components/BetPanel";
 import ResultBanner from "../components/ResultBanner";
 import BetHistory from "../components/BetHistory";
@@ -30,64 +31,43 @@ function Reel({ symbol, spinning }) {
     return () => clearInterval(intervalRef.current);
   }, [spinning, symbol]);
   return (
-    <div style={{
-      width: 110, height: 110, background: "var(--bg3)", border: "2px solid var(--border)",
-      borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: 56, boxShadow: spinning ? "0 0 20px rgba(245,166,35,0.2)" : "none",
-    }}>
+    <div style={{ width: 110, height: 110, background: "var(--bg3)", border: "2px solid var(--border)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 56 }}>
       {spinSymbol}
     </div>
   );
 }
 
 export default function Slots() {
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [reels, setReels] = useState([0, 1, 2]);
-  const [spinning, setSpinning] = useState(false);
   const historyRefetch = useRef(null);
+  const { maxBet, refetch: refetchPool } = usePoolStats();
+  const { loading, result, clearResult, placeBet } = usePlayAndWatch("SlotsResult");
 
-  const { maxBet, refetch } = usePoolStats();
+  const reels = result?.found ? Array.from(result.reels).map(Number) : [0, 1, 2];
 
-  const play = usePlayGame("SlotsResult", (decoded) => {
-    const r = decoded.reels.map(Number);
-    setReels(r);
-    setSpinning(false);
-    const won = decoded.payout > 0n;
-    setResult({
-      won,
-      payout: decoded.payout,
-      detail: `${r.map(i => SYMBOLS[i]).join(" ")}`,
-    });
-    setLoading(false);
-    refetch();
+  if (result?.found) {
+    refetchPool();
     if (historyRefetch.current) historyRefetch.current();
-  });
+  }
+
+  const banner = result?.found ? {
+    won: result.payout > 0n,
+    payout: result.payout,
+    detail: `${reels.map(i => SYMBOLS[i]).join(" ")}`,
+  } : result?.timeout ? { won: false, payout: 0n, detail: result.detail } : null;
 
   const handleBet = async (betWei) => {
-    try {
-      setLoading(true);
-      setResult(null);
-      setSpinning(true);
-      await play({ functionName: "playSlots", args: [], value: betWei });
-    } catch (err) {
-      console.error(err);
-      setSpinning(false);
-      setLoading(false);
-      if (err.message?.includes("timeout")) setResult({ won: false, payout: 0n, detail: "VRF timeout — check history in a minute" });
-    }
+    await placeBet({ functionName: "playSlots", args: [], value: betWei });
   };
 
   return (
     <div style={{ maxWidth: 700 }}>
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontFamily: "var(--font-head)", fontSize: 44, letterSpacing: 3, color: "#e040fb" }}>SLOTS</h1>
-        <p style={{ color: "var(--muted)", marginTop: 6 }}>Spin 3 reels. Match symbols for big payouts. House edge: 5%.</p>
+        <p style={{ color: "var(--muted)", marginTop: 6 }}>Spin 3 reels. Match symbols for big payouts.</p>
       </div>
-
       <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "32px", marginBottom: 24, textAlign: "center" }}>
         <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 24 }}>
-          {[0, 1, 2].map(i => <Reel key={i} symbol={SYMBOLS[reels[i]]} spinning={spinning} />)}
+          {[0, 1, 2].map(i => <Reel key={i} symbol={SYMBOLS[reels[i]]} spinning={loading} />)}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px 16px", maxWidth: 360, margin: "0 auto" }}>
           {PAYOUTS.map(({ match, mult, color }) => (
@@ -98,12 +78,10 @@ export default function Slots() {
           ))}
         </div>
       </div>
-
       <div className="card">
         <BetPanel onBet={handleBet} maxBet={maxBet} loading={loading} buttonLabel="🎰  SPIN" />
       </div>
-
-      {result && <div style={{ marginTop: 20 }}><ResultBanner result={result} onDismiss={() => setResult(null)} /></div>}
+      {banner && <div style={{ marginTop: 20 }}><ResultBanner result={banner} onDismiss={clearResult} /></div>}
       <BetHistory onNewBet={historyRefetch} />
     </div>
   );

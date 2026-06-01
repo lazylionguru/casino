@@ -1,43 +1,31 @@
 import { useState, useRef } from "react";
-import { usePoolStats, usePlayGame } from "../hooks/useContracts";
+import { usePoolStats } from "../hooks/useContracts";
+import { usePlayAndWatch } from "../hooks/usePlayAndWatch";
 import BetPanel from "../components/BetPanel";
 import ResultBanner from "../components/ResultBanner";
 import BetHistory from "../components/BetHistory";
 
-function calcMultiplier(target) { return ((100 / target) * 0.98).toFixed(4); }
-
 export default function Dice() {
   const [target, setTarget] = useState(50);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [lastRoll, setLastRoll] = useState(null);
   const historyRefetch = useRef(null);
+  const { maxBet, refetch: refetchPool } = usePoolStats();
+  const { loading, result, clearResult, placeBet } = usePlayAndWatch("DiceResult");
 
-  const { maxBet, refetch } = usePoolStats();
-
-  const play = usePlayGame("DiceResult", (decoded) => {
-    setLastRoll(Number(decoded.roll));
-    setResult({
-      won: decoded.payout > 0n,
-      payout: decoded.payout,
-      detail: `Rolled ${decoded.roll} — needed under ${decoded.target}`,
-    });
-    setLoading(false);
-    refetch();
+  if (result?.found) {
+    refetchPool();
     if (historyRefetch.current) historyRefetch.current();
-  });
+  }
+
+  const banner = result?.found ? {
+    won: result.payout > 0n,
+    payout: result.payout,
+    detail: `Rolled ${result.roll} — needed under ${result.target}`,
+  } : result?.timeout ? { won: false, payout: 0n, detail: result.detail } : null;
+
+  const lastRoll = result?.found ? Number(result.roll) : null;
 
   const handleBet = async (betWei) => {
-    try {
-      setLoading(true);
-      setResult(null);
-      setLastRoll(null);
-      await play({ functionName: "playDice", args: [BigInt(target)], value: betWei });
-    } catch (err) {
-      console.error(err);
-      setLoading(false);
-      if (err.message?.includes("timeout")) setResult({ won: false, payout: 0n, detail: "VRF timeout — check history in a minute" });
-    }
+    await placeBet({ functionName: "playDice", args: [BigInt(target)], value: betWei });
   };
 
   return (
@@ -78,13 +66,13 @@ export default function Dice() {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, padding: "14px", background: "var(--bg3)", borderRadius: 8, textAlign: "center" }}>
             <div><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>WIN CHANCE</div><div className="mono" style={{ fontSize: 18, color: "var(--blue)" }}>{target - 1}%</div></div>
-            <div><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>MULTIPLIER</div><div className="mono" style={{ fontSize: 18, color: "var(--green)" }}>{calcMultiplier(target)}×</div></div>
+            <div><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>MULTIPLIER</div><div className="mono" style={{ fontSize: 18, color: "var(--green)" }}>{((100/target)*0.98).toFixed(4)}×</div></div>
             <div><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>HOUSE EDGE</div><div className="mono" style={{ fontSize: 18, color: "var(--muted)" }}>2%</div></div>
           </div>
         </BetPanel>
       </div>
 
-      {result && <div style={{ marginTop: 20 }}><ResultBanner result={result} onDismiss={() => setResult(null)} /></div>}
+      {banner && <div style={{ marginTop: 20 }}><ResultBanner result={banner} onDismiss={clearResult} /></div>}
       <BetHistory onNewBet={historyRefetch} />
     </div>
   );

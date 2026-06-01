@@ -1,44 +1,36 @@
 import { useState, useRef } from "react";
-import { usePoolStats, usePlayGame } from "../hooks/useContracts";
+import { usePoolStats } from "../hooks/useContracts";
+import { usePlayAndWatch } from "../hooks/usePlayAndWatch";
 import BetPanel from "../components/BetPanel";
 import ResultBanner from "../components/ResultBanner";
 import BetHistory from "../components/BetHistory";
 
 export default function Coinflip() {
   const [choice, setChoice] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
   const [flipping, setFlipping] = useState(false);
   const historyRefetch = useRef(null);
+  const { maxBet, refetch: refetchPool } = usePoolStats();
+  const { loading, result, clearResult, placeBet } = usePlayAndWatch("CoinflipResult");
 
-  const { maxBet, refetch } = usePoolStats();
-
-  const play = usePlayGame("CoinflipResult", (decoded) => {
-    setResult({
-      won: decoded.payout > 0n,
-      payout: decoded.payout,
-      detail: `Coin landed: ${decoded.roll === 0n ? "Heads" : "Tails"}`,
-    });
+  // When result arrives, stop animation and refresh
+  if (result?.found && flipping) {
     setFlipping(false);
-    setLoading(false);
-    refetch();
+    refetchPool();
     if (historyRefetch.current) historyRefetch.current();
-  });
+  }
+
+  const banner = result?.found ? {
+    won: result.payout > 0n,
+    payout: result.payout,
+    detail: `Coin landed: ${Number(result.roll) === 0 ? "Heads" : "Tails"}`,
+  } : result?.timeout ? {
+    won: false, payout: 0n, detail: result.detail,
+  } : null;
 
   const handleBet = async (betWei) => {
-    try {
-      setLoading(true);
-      setResult(null);
-      setFlipping(true);
-      await play({ functionName: "playCoinflip", args: [BigInt(choice)], value: betWei });
-    } catch (err) {
-      console.error(err);
-      setLoading(false);
-      setFlipping(false);
-      if (err.message?.includes("timeout")) {
-        setResult({ won: false, payout: 0n, detail: "VRF timeout — check history in a minute" });
-      }
-    }
+    setFlipping(true);
+    await placeBet({ functionName: "playCoinflip", args: [BigInt(choice)], value: betWei });
+    setFlipping(false);
   };
 
   return (
@@ -83,8 +75,7 @@ export default function Coinflip() {
         </BetPanel>
       </div>
 
-      {result && <div style={{ marginTop: 20 }}><ResultBanner result={result} onDismiss={() => setResult(null)} /></div>}
-
+      {banner && <div style={{ marginTop: 20 }}><ResultBanner result={banner} onDismiss={clearResult} /></div>}
       <BetHistory onNewBet={historyRefetch} />
     </div>
   );

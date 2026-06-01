@@ -1,7 +1,14 @@
 import { useReadContract, useWriteContract, usePublicClient, useAccount } from "wagmi";
-import { parseAbi, parseAbiItem } from "viem";
-import { POOL_ABI, GAMES_ABI } from "../config/wagmi";
+import { createPublicClient, http, parseAbi, parseAbiItem } from "viem";
+import { sepolia } from "wagmi/chains";
+import { POOL_ABI, GAMES_ABI, PUBLIC_RPC } from "../config/wagmi";
 import contractAddresses from "../config/contracts.json";
+
+// Separate public client for event polling — avoids Alchemy rate limits
+const publicLogClient = createPublicClient({
+  chain: sepolia,
+  transport: http(PUBLIC_RPC),
+});
 
 export function usePoolStats() {
   const { address } = useAccount();
@@ -58,7 +65,6 @@ export function useGamesStats() {
   return { totalBets, totalPaidOut };
 }
 
-// ABI items for each result event — used for targeted log filtering
 const RESULT_EVENT_ABIS = {
   CoinflipResult: parseAbiItem("event CoinflipResult(uint256 indexed requestId, address indexed player, uint256 bet, bool won, uint256 roll, uint256 payout)"),
   DiceResult:     parseAbiItem("event DiceResult(uint256 indexed requestId, address indexed player, uint256 bet, bool won, uint256 roll, uint256 target, uint256 payout)"),
@@ -66,21 +72,12 @@ const RESULT_EVENT_ABIS = {
   SlotsResult:    parseAbiItem("event SlotsResult(uint256 indexed requestId, address indexed player, uint256 bet, uint8[3] reels, uint256 payout)"),
 };
 
-/**
- * Play a game and wait for the VRF callback result event.
- *
- * VRF delivers the result in a SEPARATE transaction (~30-90s on Sepolia).
- * Flow:
- *   1. Send bet tx → get requestId from BetPlaced event
- *   2. Poll for the result event matching that requestId every 3s
- *   3. Call onResult when found (timeout: 3 min)
- */
 export function usePlayGame(eventName, onResult) {
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
 
   const play = async ({ functionName, args, value }) => {
-    // Step 1: send bet tx
+    // Send bet tx via MetaMask
     const hash = await writeContractAsync({
       address: contractAddresses.CasinoGames,
       abi: parseAbi(GAMES_ABI),
@@ -89,9 +86,10 @@ export function usePlayGame(eventName, onResult) {
       value,
     });
 
-    // Step 2: wait for confirmation, extract requestId
+    // Wait for bet tx confirmation
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
+    // Extract requestId from BetPlaced event
     let requestId = null;
     for (const log of receipt.logs) {
       try {
@@ -108,10 +106,10 @@ export function usePlayGame(eventName, onResult) {
 
     if (requestId === null) throw new Error("Could not find requestId in bet tx");
 
-    // Step 3: poll for result event using targeted filter (much more reliable)
+    // Poll for result event using PUBLIC RPC (no rate limits)
     const eventAbi = RESULT_EVENT_ABIS[eventName];
     const fromBlock = receipt.blockNumber;
-    const deadline = Date.now() + 3 * 60 * 1000; // 3 min
+    const deadline = Date.now() + 3 * 60 * 1000;
 
     return new Promise((resolve, reject) => {
       const poll = async () => {
@@ -121,10 +119,8 @@ export function usePlayGame(eventName, onResult) {
         }
 
         try {
-          const toBlock = await publicClient.getBlockNumber();
-
-          // Use targeted event filter — much faster than fetching all logs
-          const logs = await publicClient.getLogs({
+          const toBlock = await publicLogClient.getBlockNumber();
+          const logs = await publicLogClient.getLogs({
             address: contractAddresses.CasinoGames,
             event: eventAbi,
             fromBlock,
@@ -132,7 +128,6 @@ export function usePlayGame(eventName, onResult) {
           });
 
           for (const log of logs) {
-            // Match on requestId (first indexed param)
             if (log.args?.requestId === requestId) {
               onResult && onResult({ ...log.args, hash });
               resolve({ hash, receipt, decoded: log.args });
